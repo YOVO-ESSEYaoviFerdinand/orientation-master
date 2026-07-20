@@ -59,7 +59,7 @@ JNS_QUESTIONS = [
 
 LICENCE_LABELS = {
     "MIASHS": "MIASHS (Mathématiques et Informatique Appliquées aux Sciences Sociales)",
-    "EcoGestion": "Éco-Gestion classique (+ option LAS – Licence avec option Accès Santé)",
+    "EcoGestion": "Éco-Gestion classique (+ option LAS, Licence avec option Accès Santé)",
     "SI": "Éco-Gestion Section Internationale (SI)",
     "CPES": "Éco-Gestion CPES (Cursus Préparatoire aux Études Supérieures)",
     "BBAF": "Éco-Gestion BBAF (Bachelor in Business and Applied Finance)",
@@ -109,6 +109,10 @@ def charger_donnees():
         row["Code"]: row["Débouchés / métiers"] for _, row in fiches_df.iterrows()
     }
 
+    liens_officiels = {
+        row["Code"]: row["Lien officiel"] for _, row in fiches_df.iterrows()
+    }
+
     def norm_opt(x):
         return str(x).split(" [")[0].split(" (double effet")[0].strip()
 
@@ -147,6 +151,7 @@ def charger_donnees():
         "nom_complet": nom_complet,
         "coherence": coherence,
         "debouches": debouches,
+        "liens_officiels": liens_officiels,
         "bareme": bareme,
         "dest_questions": dest_questions,
         "q_text": q_text,
@@ -429,6 +434,7 @@ if st.session_state.etape == "bienvenue":
 
 # ---------------- ETAPE Q0 : universite d'origine ----------------
 elif st.session_state.etape == "q0":
+    st.progress(1 / 4)
     eyebrow("Question 1 sur 3 · avant de commencer")
     question_title("Êtes-vous étudiant(e) à l'Université de Rennes, ou dans une autre université ?")
     choix = st.radio(
@@ -444,6 +450,7 @@ elif st.session_state.etape == "q0":
 
 # ---------------- ETAPE Q1 : niveau d'etudes ----------------
 elif st.session_state.etape == "q1_niveau":
+    st.progress(2 / 4)
     eyebrow("Question 2 sur 3 · avant de commencer")
     question_title("En quelle année êtes-vous actuellement ?")
     choix = st.radio(
@@ -469,6 +476,7 @@ elif st.session_state.etape == "q1_niveau":
 
 # ---------------- ETAPE Q1bis : licence precise (Rennes uniquement) ----------------
 elif st.session_state.etape == "q1_licence":
+    st.progress(3 / 4)
     eyebrow("Question 3 sur 3 · avant de commencer")
     question_title("Pouvez-vous indiquer la licence que vous suivez actuellement ?")
     choix = st.radio(
@@ -490,6 +498,7 @@ elif st.session_state.etape == "q1_licence":
 
 # ---------------- ETAPE Q2 : destination ----------------
 elif st.session_state.etape == "q2":
+    st.progress(4 / 4)
     eyebrow("Votre domaine")
     question_title("Quel domaine correspond le mieux à votre projet professionnel ?")
     options = DESTINATION_ORDER + [JE_NE_SAIS_PAS]
@@ -642,6 +651,7 @@ elif st.session_state.etape == "bloc":
 
 # ---------------- ETAPE F1 ----------------
 elif st.session_state.etape == "f1":
+    st.progress(0.93)
     eyebrow("Pour finir")
     question_title("Un taux d'insertion professionnelle rapide et élevé après le master est-il important pour vous ?")
     choix = st.radio(
@@ -656,6 +666,7 @@ elif st.session_state.etape == "f1":
 
 # ---------------- ETAPE F2 ----------------
 elif st.session_state.etape == "f2":
+    st.progress(0.97)
     eyebrow("Pour finir")
     question_title("Le niveau de salaire à la sortie du master est-il important pour vous ?")
     choix = st.radio(
@@ -687,6 +698,7 @@ elif st.session_state.etape == "resultat":
 
     medailles = ["🥇", "🥈", "🥉"]
     for medaille, code in zip(medailles, top3):
+        lien = DATA["liens_officiels"].get(code)
         with st.container(border=True):
             st.markdown(
                 f'<div class="result-top"><span class="result-medal">{medaille}</span>'
@@ -695,9 +707,62 @@ elif st.session_state.etape == "resultat":
                 f'<div class="result-debouches-text">{DATA["debouches"].get(code, "Non renseigné")}</div>',
                 unsafe_allow_html=True,
             )
-
+            if isinstance(lien, str) and lien.startswith("http"):
+                st.link_button("Voir la fiche officielle du master ↗️", lien)
     st.divider()
-    if st.button("🔄 Refaire le questionnaire"):
+
+    # ---------- Modifier une reponse deja donnee, sans tout refaire ----------
+    with st.expander("✏️ Modifier une de mes réponses"):
+        dest = st.session_state.destination
+        qids = DATA["dest_questions"][dest]
+        choix_liste = [(qid, DATA["q_text"][(dest, qid)]) for qid in qids]
+        choix_liste += [("F1", "Un taux d'insertion professionnelle rapide et élevé après le master est-il important pour vous ?")]
+        choix_liste += [("F2", "Le niveau de salaire à la sortie du master est-il important pour vous ?")]
+
+        qid_a_modifier = st.selectbox(
+            "Quelle question voulez-vous modifier ?",
+            options=[q for q, _ in choix_liste],
+            format_func=lambda q: dict(choix_liste)[q][:90] + ("…" if len(dict(choix_liste)[q]) > 90 else ""),
+        )
+
+        if qid_a_modifier in ("F1", "F2"):
+            valeur_actuelle = st.session_state.f1 if qid_a_modifier == "F1" else st.session_state.f2
+            nouvelle_valeur = st.radio(
+                "Nouvelle réponse :",
+                options=["Très important", "Peu importe", "Pas prioritaire"],
+                index=["Très important", "Peu importe", "Pas prioritaire"].index(valeur_actuelle),
+                key="modif_f",
+            )
+            if st.button("Enregistrer et recalculer ✅"):
+                if qid_a_modifier == "F1":
+                    st.session_state.f1 = nouvelle_valeur
+                else:
+                    st.session_state.f2 = nouvelle_valeur
+                st.rerun()
+        else:
+            options_q = list(DATA["bareme"][(dest, qid_a_modifier)].keys())
+            est_curseur = set(options_q) == {"1", "2", "3", "4", "5"}
+            valeur_actuelle = st.session_state.reponses.get(qid_a_modifier)
+            if est_curseur:
+                nouvelle_valeur = st.select_slider(
+                    "Nouvelle réponse :",
+                    options=["1", "2", "3", "4", "5"],
+                    value=valeur_actuelle if valeur_actuelle in options_q else "3",
+                    key="modif_curseur",
+                )
+            else:
+                idx_actuel = options_q.index(valeur_actuelle) if valeur_actuelle in options_q else 0
+                nouvelle_valeur = st.radio(
+                    "Nouvelle réponse :",
+                    options=options_q,
+                    index=idx_actuel,
+                    key="modif_radio",
+                )
+            if st.button("Enregistrer et recalculer ✅"):
+                st.session_state.reponses[qid_a_modifier] = nouvelle_valeur
+                st.rerun()
+
+    if st.button("🔄 Refaire le questionnaire depuis le début"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.session_state.etape = "bienvenue"
