@@ -711,56 +711,63 @@ elif st.session_state.etape == "resultat":
                 st.link_button("Voir la fiche officielle du master ↗️", lien)
     st.divider()
 
-    # ---------- Modifier une reponse deja donnee, sans tout refaire ----------
-    with st.expander("✏️ Modifier une de mes réponses"):
+    # ---------- Modifier n'importe laquelle des reponses deja donnees, toutes en meme temps ----------
+    with st.expander("✏️ Modifier mes réponses"):
+        st.caption("Toutes vos réponses sont affichées ci-dessous, déjà pré-remplies. Changez ce que vous voulez, puis validez en bas pour recalculer.")
         dest = st.session_state.destination
         qids = DATA["dest_questions"][dest]
-        choix_liste = [(qid, DATA["q_text"][(dest, qid)]) for qid in qids]
-        choix_liste += [("F1", "Un taux d'insertion professionnelle rapide et élevé après le master est-il important pour vous ?")]
-        choix_liste += [("F2", "Le niveau de salaire à la sortie du master est-il important pour vous ?")]
+        nouvelles_reponses = {}
 
-        qid_a_modifier = st.selectbox(
-            "Quelle question voulez-vous modifier ?",
-            options=[q for q, _ in choix_liste],
-            format_func=lambda q: dict(choix_liste)[q][:90] + ("…" if len(dict(choix_liste)[q]) > 90 else ""),
-        )
-
-        if qid_a_modifier in ("F1", "F2"):
-            valeur_actuelle = st.session_state.f1 if qid_a_modifier == "F1" else st.session_state.f2
-            nouvelle_valeur = st.radio(
-                "Nouvelle réponse :",
-                options=["Très important", "Peu importe", "Pas prioritaire"],
-                index=["Très important", "Peu importe", "Pas prioritaire"].index(valeur_actuelle),
-                key="modif_f",
-            )
-            if st.button("Enregistrer et recalculer ✅"):
-                if qid_a_modifier == "F1":
-                    st.session_state.f1 = nouvelle_valeur
-                else:
-                    st.session_state.f2 = nouvelle_valeur
-                st.rerun()
-        else:
-            options_q = list(DATA["bareme"][(dest, qid_a_modifier)].keys())
+        for qid in qids:
+            texte = DATA["q_text"][(dest, qid)]
+            options_q = list(DATA["bareme"][(dest, qid)].keys())
             est_curseur = set(options_q) == {"1", "2", "3", "4", "5"}
-            valeur_actuelle = st.session_state.reponses.get(qid_a_modifier)
+            valeur_actuelle = st.session_state.reponses.get(qid)
+            st.markdown(f"**{qid} — {texte}**")
             if est_curseur:
-                nouvelle_valeur = st.select_slider(
-                    "Nouvelle réponse :",
+                nouvelles_reponses[qid] = st.select_slider(
+                    "Réponse :",
                     options=["1", "2", "3", "4", "5"],
                     value=valeur_actuelle if valeur_actuelle in options_q else "3",
-                    key="modif_curseur",
+                    key=f"modif_{dest}_{qid}",
+                    label_visibility="collapsed",
                 )
             else:
                 idx_actuel = options_q.index(valeur_actuelle) if valeur_actuelle in options_q else 0
-                nouvelle_valeur = st.radio(
-                    "Nouvelle réponse :",
+                nouvelles_reponses[qid] = st.radio(
+                    "Réponse :",
                     options=options_q,
                     index=idx_actuel,
-                    key="modif_radio",
+                    key=f"modif_{dest}_{qid}",
+                    label_visibility="collapsed",
                 )
-            if st.button("Enregistrer et recalculer ✅"):
-                st.session_state.reponses[qid_a_modifier] = nouvelle_valeur
-                st.rerun()
+            st.markdown("---")
+
+        st.markdown("**Un taux d'insertion professionnelle rapide et élevé après le master est-il important pour vous ?**")
+        nouvelle_f1 = st.radio(
+            "Réponse :",
+            options=["Très important", "Peu importe", "Pas prioritaire"],
+            index=["Très important", "Peu importe", "Pas prioritaire"].index(st.session_state.f1),
+            key="modif_f1",
+            label_visibility="collapsed",
+        )
+        st.markdown("---")
+
+        st.markdown("**Le niveau de salaire à la sortie du master est-il important pour vous ?**")
+        nouvelle_f2 = st.radio(
+            "Réponse :",
+            options=["Très important", "Peu importe", "Pas prioritaire"],
+            index=["Très important", "Peu importe", "Pas prioritaire"].index(st.session_state.f2),
+            key="modif_f2",
+            label_visibility="collapsed",
+        )
+
+        if st.button("Enregistrer toutes les modifications et recalculer ✅"):
+            for qid, valeur in nouvelles_reponses.items():
+                st.session_state.reponses[qid] = valeur
+            st.session_state.f1 = nouvelle_f1
+            st.session_state.f2 = nouvelle_f2
+            st.rerun()
 
     if st.button("🔄 Refaire le questionnaire depuis le début"):
         for key in list(st.session_state.keys()):
