@@ -573,6 +573,11 @@ elif st.session_state.etape == "jns_bloc":
 # ---------------- ETAPE classement des 6 familles ----------------
 elif st.session_state.etape == "jns_classement":
     question_title("D'après vos réponses, voici les domaines qui vous correspondent, du plus proche au moins proche :")
+    st.caption(
+        "Ce classement reflète uniquement vos envies. Choisissez un domaine pour répondre ensuite à quelques "
+        "questions sur vos résultats et vos compétences : c'est en croisant les deux (ce que vous voulez, et "
+        "ce que vous pouvez) que l'outil pourra vous suggérer les masters les plus adaptés à l'intérieur de ce domaine."
+    )
     classement = calculer_classement_jns(st.session_state.jns_reponses)
 
     for rang, (famille, _score) in enumerate(classement, start=1):
@@ -584,7 +589,7 @@ elif st.session_state.etape == "jns_classement":
                 unsafe_allow_html=True,
             )
         with col_btn:
-            if st.button("Découvrir ➡️", key=f"choix_{famille}"):
+            if st.button("Approfondir ➡️", key=f"choix_{famille}"):
                 st.session_state.destination = famille
                 st.session_state.q_index = 0
                 st.session_state.via_jns = True
@@ -607,6 +612,14 @@ elif st.session_state.etape == "bloc":
     qid = qids[idx]
     texte = DATA["q_text"][(dest, qid)]
     options = list(DATA["bareme"][(dest, qid)].keys())
+
+    if idx == 0 and st.session_state.get("via_jns"):
+        st.info(
+            f"Les questions précédentes ont identifié « {DATA['dest_labels'][dest]} » comme le domaine qui "
+            f"correspond le plus à vos envies. Il reste maintenant à identifier, à l'intérieur de ce domaine, "
+            f"lequel de ses masters correspond le mieux à vos compétences réelles (résultats, expérience). "
+            f"Voici quelques questions à ce sujet."
+        )
 
     st.progress(idx / len(qids))
     eyebrow(f"{DATA['dest_labels'][dest]} · question {idx + 1} sur {len(qids)}")
