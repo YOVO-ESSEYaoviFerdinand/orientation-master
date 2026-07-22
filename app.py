@@ -211,6 +211,84 @@ def calculer_classement_jns(jns_reponses):
 
 
 # ==================================================================
+# SAUVEGARDE DES RESULTATS (pour le pre-test)
+# Deux fichiers relies par un identifiant de session unique :
+# - resultats_test.csv : une ligne par etudiant, avec le resultat final
+# - reponses_detail.csv : une ligne par QUESTION repondue par chaque
+#   etudiant (texte de la question + reponse donnee), pour permettre une
+#   analyse fine dans le rapport (quelles reponses menent a quel resultat).
+# Attention : sur un hebergement gratuit type Streamlit Community Cloud,
+# ces fichiers ne sont PAS garantis permanents -- ils peuvent etre effaces
+# si l'application redemarre ou est redeployee. Pour un pre-test limite
+# dans le temps, cela reste suffisant ; a remplacer par une vraie base de
+# donnees externe si l'outil doit etre utilise plus largement.
+# ==================================================================
+import uuid
+
+RESULTATS_FILE = "resultats_test.csv"
+REPONSES_DETAIL_FILE = "reponses_detail.csv"
+
+def sauvegarder_resultat(top3, dest, niveau, origine, licence, jns_utilise, reponses, f1, f2, jns_reponses=None):
+    session_id = str(uuid.uuid4())[:8]
+    horodatage = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1) resume : une ligne par etudiant
+    ligne_resume = pd.DataFrame([{
+        "session_id": session_id,
+        "horodatage": horodatage,
+        "origine": origine,
+        "niveau": niveau,
+        "licence": licence if licence else "Autre université",
+        "domaine": dest,
+        "via_je_ne_sais_pas": jns_utilise,
+        "master_1": top3[0],
+        "master_2": top3[1],
+        "master_3": top3[2],
+    }])
+    try:
+        existant = pd.read_csv(RESULTATS_FILE)
+        combine = pd.concat([existant, ligne_resume], ignore_index=True)
+    except FileNotFoundError:
+        combine = ligne_resume
+    combine.to_csv(RESULTATS_FILE, index=False)
+
+    # 2) detail : une ligne par question repondue (bloc de destination + F1/F2 + Je ne sais pas eventuellement)
+    lignes_detail = []
+    for qid, valeur in reponses.items():
+        lignes_detail.append({
+            "session_id": session_id, "horodatage": horodatage, "bloc": dest,
+            "question_id": qid, "question_texte": DATA["q_text"].get((dest, qid), ""),
+            "reponse": valeur,
+        })
+    lignes_detail.append({
+        "session_id": session_id, "horodatage": horodatage, "bloc": "UNIVERSELLE",
+        "question_id": "F1", "question_texte": "Un taux d'insertion professionnelle rapide et élevé après le master est-il important pour vous ?",
+        "reponse": f1,
+    })
+    lignes_detail.append({
+        "session_id": session_id, "horodatage": horodatage, "bloc": "UNIVERSELLE",
+        "question_id": "F2", "question_texte": "Le niveau de salaire à la sortie du master est-il important pour vous ?",
+        "reponse": f2,
+    })
+    if jns_reponses:
+        textes_jns = {qid: texte for qid, texte, _ in JNS_QUESTIONS}
+        for qid, valeur in jns_reponses.items():
+            lignes_detail.append({
+                "session_id": session_id, "horodatage": horodatage, "bloc": "JE_NE_SAIS_PAS",
+                "question_id": qid, "question_texte": textes_jns.get(qid, ""),
+                "reponse": valeur,
+            })
+
+    df_detail = pd.DataFrame(lignes_detail)
+    try:
+        existant2 = pd.read_csv(REPONSES_DETAIL_FILE)
+        combine2 = pd.concat([existant2, df_detail], ignore_index=True)
+    except FileNotFoundError:
+        combine2 = df_detail
+    combine2.to_csv(REPONSES_DETAIL_FILE, index=False)
+
+
+# ==================================================================
 # STYLE
 # ==================================================================
 st.set_page_config(page_title="Trouve ton Master", page_icon="🧭", layout="centered")
@@ -408,6 +486,46 @@ def eyebrow(texte):
 
 def question_title(texte):
     st.markdown(f'<div class="question-text">{texte}</div>', unsafe_allow_html=True)
+
+
+# ==================================================================
+# PANNEAU ADMIN (consultation des resultats sauvegardes)
+# Accessible en ajoutant ?admin=1 a la fin du lien de l'application.
+# Reserve a l'auteur du projet pour consulter et telecharger les
+# resultats du pre-test -- pas destine aux etudiants.
+# ==================================================================
+if st.query_params.get("admin") == "1":
+    st.title("📊 Résultats du pré-test (accès admin)")
+
+    st.header("Résumé par étudiant")
+    try:
+        df_resultats = pd.read_csv(RESULTATS_FILE)
+        st.write(f"{len(df_resultats)} passage(s) enregistré(s).")
+        st.dataframe(df_resultats, use_container_width=True)
+        st.download_button(
+            "⬇️ Télécharger le résumé en CSV",
+            df_resultats.to_csv(index=False).encode("utf-8"),
+            file_name="resultats_test.csv",
+            mime="text/csv",
+        )
+    except FileNotFoundError:
+        st.info("Aucun résultat enregistré pour l'instant.")
+
+    st.header("Détail de chaque réponse individuelle")
+    try:
+        df_detail = pd.read_csv(REPONSES_DETAIL_FILE)
+        st.write(f"{len(df_detail)} réponse(s) individuelle(s) enregistrée(s).")
+        st.dataframe(df_detail, use_container_width=True)
+        st.download_button(
+            "⬇️ Télécharger le détail en CSV",
+            df_detail.to_csv(index=False).encode("utf-8"),
+            file_name="reponses_detail.csv",
+            mime="text/csv",
+        )
+    except FileNotFoundError:
+        st.info("Aucune réponse détaillée enregistrée pour l'instant.")
+
+    st.stop()
 
 
 # ==================================================================
@@ -703,6 +821,21 @@ elif st.session_state.etape == "resultat":
         st.session_state.niveau,
     )
 
+    if not st.session_state.get("deja_sauvegarde"):
+        sauvegarder_resultat(
+            top3,
+            st.session_state.destination,
+            st.session_state.niveau,
+            st.session_state.origine,
+            st.session_state.licence,
+            st.session_state.get("via_jns", False),
+            st.session_state.reponses,
+            st.session_state.f1,
+            st.session_state.f2,
+            st.session_state.get("jns_reponses"),
+        )
+        st.session_state.deja_sauvegarde = True
+
     st.markdown(
         '<div class="q-eyebrow">Votre résultat</div>',
         unsafe_allow_html=True,
@@ -780,6 +913,7 @@ elif st.session_state.etape == "resultat":
                 st.session_state.reponses[qid] = valeur
             st.session_state.f1 = nouvelle_f1
             st.session_state.f2 = nouvelle_f2
+            st.session_state.deja_sauvegarde = False
             st.rerun()
 
     if st.button("🔄 Refaire le questionnaire depuis le début"):
